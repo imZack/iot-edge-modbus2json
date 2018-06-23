@@ -1,0 +1,39 @@
+{
+  "name": "iot-edge-modbus2json",
+  "version": "1.0.0",
+  "description": "Azure IoT Edge Module - Convert Azure/iot-edge-modbus's output to Power BI friendly format",
+  "main": "index.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imZack/iot-edge-modbus2json.git"
+  },
+  "keywords": [
+    "Azure IoT",
+    "Azure IoT Edge",
+    "IoT Edge Module",
+    "Modbus",
+    "JSON"
+  ],
+  "author": "YuLun Shih",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/imZack/iot-edge-modbus2json/issues"
+  },
+  "homepage": "https://github.com/imZack/iot-edge-modbus2json#readme",
+  "dependencies": {
+    "azure-iot-device": "1.5.2-modules-preview.3",
+    "azure-iot-device-mqtt": "1.5.2-modules-preview.3",
+    "debug": "^3.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^10.3.5",
+    "eslint": "^4.19.1",
+    "eslint-config-airbnb-base": "^12.1.0",
+    "eslint-plugin-import": "^2.12.0",
+    "typescript": "^2.9.2"
+  }
+}
