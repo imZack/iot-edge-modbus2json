@@ -115,6 +115,8 @@ root@Moxa:/home/moxa/edge-sample# docker logs -f --tail=50 modbus
 
 - Enable Module Twin
 
+  ![Enable Module Twin](https://i.imgur.com/JfEsBtc.png)
+
   ```json
   {
     "properties.desired": {
@@ -134,4 +136,10 @@ root@Moxa:/home/moxa/edge-sample# docker logs -f --tail=50 modbus
 }
 ```
 
+![Modules](https://i.imgur.com/RPE1ug0.png)
+
 Now all the data would been published to IoT Hub and you could setup a Stream Analytics job for feeding to Power BI dataset.
+
+### Final Result with Power BI
+
+![Dashboard](https://i.imgur.com/pPijKW9.png)
