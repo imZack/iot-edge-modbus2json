@@ -6,7 +6,6 @@ const debug = require('debug')('iot-edge-modbus2json:app');
 
 const connectionString = process.env.EdgeHubConnectionString;
 const moduleCACertFile = process.env.EdgeModuleCACertificateFile;
-const client = Client.fromConnectionString(connectionString, Protocol);
 
 const byteMerge = function byteMerge(low, high) {
   const output = Buffer.alloc(4, 0);
@@ -57,59 +56,66 @@ const processTag = function processTag(data, tag) {
   };
 };
 
-client.on('error', (err) => {
-  console.error(err.message);
-});
-
-client.setOptions({ ca: fs.readFileSync(moduleCACertFile).toString() }, (err) => {
+Client.fromEnvironment(Protocol, (err, client) => {
   if (err) {
-    console.error('Client setOptions error', err);
+    console.error(err);
     return;
   }
 
-  client.open((errOpen) => {
-    if (errOpen) {
-      console.error('Could not connect', errOpen.message);
-      return;
-    }
+  client.on('error', (err) => {
+    console.error(err.message);
+  });
 
-    debug('Client connected');
-    client.getTwin((errTwin, twin) => {
+/*
+  client.setOptions({ ca: fs.readFileSync(moduleCACertFile).toString() }, (err) => {
+  if (err) {
+      console.error('Client setOptions error', err);
+      return;
+  }
+*/
+  client.open(err => {
+
+      debug('Client connected');
+      client.getTwin((errTwin, twin) => {
       tags = twin.properties.desired.tags || tags;
       debug('tags', tags);
       twin.on('properties.desired', (delta) => {
-        try {
+          try {
           tags = JSON.parse(delta.tags);
           debug('update tags', tags);
-        } catch (error) {
+          } catch (error) {
           debug('update tags failed', tags);
           debug(error);
-        }
+          }
       });
-    });
+      });
 
-    client.on('inputMessage', (inputName, rawMsg) => {
+      client.on('inputMessage', (inputName, rawMsg) => {
       if (inputName !== 'modbus') {
-        debug('Unknown inputMessage received on input', inputName);
-        return;
+          debug('Unknown inputMessage received on input', inputName);
+          return;
       }
 
-      const msg = JSON.parse(rawMsg.getBytes().toString());
+      let msg = JSON.parse(rawMsg.getBytes().toString());
       const messages = {};
+      if (!Array.isArray(msg)) {
+        msg = [msg];
+      }
       msg.forEach((row) => {
-        if (!messages[row.SourceTimestamp]) messages[row.SourceTimestamp] = {};
-        messages[row.SourceTimestamp][row.Address] = row;
+          if (!messages[row.SourceTimestamp]) messages[row.SourceTimestamp] = {};
+          messages[row.SourceTimestamp][row.Address] = row;
       });
 
       const tagObjs = [].concat(...Object
-        .keys(messages)
-        .map(key => messages[key])
-        .map(val => tags
+          .keys(messages)
+          .map(key => messages[key])
+          .map(val => tags
           .map(tag => processTag(val, tag))
           .filter(parsedTag => parsedTag !== undefined)));
 
       client
-        .sendOutputEvent('tags', new Message(JSON.stringify(tagObjs)), () => {});
-    });
+          .sendOutputEvent('tags', new Message(JSON.stringify(tagObjs)), () => {});
+      });
   });
 });
+

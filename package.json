@@ -25,8 +25,8 @@
   },
   "homepage": "https://github.com/imZack/iot-edge-modbus2json#readme",
   "dependencies": {
-    "azure-iot-device": "1.5.2-modules-preview.3",
-    "azure-iot-device-mqtt": "1.5.2-modules-preview.3",
+    "azure-iot-device": "1.7.0",
+    "azure-iot-device-mqtt": "1.7.0",
     "debug": "^3.1.0"
   },
   "devDependencies": {

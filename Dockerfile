@@ -8,4 +8,4 @@ RUN npm install --production
 
 COPY . /app
 
-CMD ["npm", "start"]
+CMD ["node", "app.js"]
