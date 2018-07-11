@@ -4,9 +4,6 @@ const { Message } = require('azure-iot-device');
 const fs = require('fs');
 const debug = require('debug')('iot-edge-modbus2json:app');
 
-const connectionString = process.env.EdgeHubConnectionString;
-const moduleCACertFile = process.env.EdgeModuleCACertificateFile;
-
 const byteMerge = function byteMerge(low, high) {
   const output = Buffer.alloc(4, 0);
   output.writeUInt16LE(low, 2);
@@ -14,12 +11,48 @@ const byteMerge = function byteMerge(low, high) {
   return output;
 };
 
+const convertToDataType = function convertToDataType(tag, buff) {
+  switch(tag.typeName) {
+    case 'uint':
+      if (buff.length == 1) return buff.readUInt16LE(0);
+      else if (buff.length == 2) return buff.readUInt32LE(0);
+      else return;
+    case 'int':
+      if (buff.length == 1) return buff.readInt16LE(0);
+      else if (buff.length == 2) return buff.readInt32LE(0);
+      else return;
+    case 'float':
+      if (buff.length == 1) {
+        debug('type: float with buff size 1');
+        return;
+      }
+      else if (buff.length == 2) return buff.readInt32LE(0);
+      else return;
+    default:
+      debug(`Non type matched ${typeName}`);
+      return;
+  }
+}
+  
+const scaleValue = function scalingValue(tag, value) {
+  if (tag.scaling == 'point-slope') {
+    // *Result = n2 + (input - n1) x [(m2-n2)/(m1-n1)]
+    return tag.pointParams.min2 + (tag - tag.pointParams.min1) * ((tag.pointParams.max2 - tag.pointParams.min2) / (tag.pointParams.max1 - tag.pointParams.min1));
+  } else if (tag.scaling == 'slope-intercept') {
+    return tag * tag.interceptParams.slope + tag.slopeParams.offset;
+  } else if (tag.scaling == 'none') {
+    return tag;
+  }
+
+  debug(`Non of scaling type matched ${tag.scaling}`);
+  return tag;
+}
+
 console.error = (message) => {
   throw new Error(message);
 };
 
 let tags = [];
-
 const processTag = function processTag(data, tag) {
   const { addressArr } = tag;
 
@@ -36,20 +69,27 @@ const processTag = function processTag(data, tag) {
     }
   }
 
-  let value;
+  let buff;
   if (arrLength === 1) {
-    [value] = addressArr;
+    buff = Buffer.alloc(4, 0);
+    buff.writeUInt16LE(+data[addressArr[0]].Value, 0);
   } else {
-    value = byteMerge(
+    buff = byteMerge(
       +data[addressArr[0]].Value,
       +data[addressArr[1]].Value,
-    ).readFloatLE(0);
+    );
   }
 
-  debug('tag: %s, value: %f', tag.name, value);
+  debug(`buff: ${buff}`);
+  const value = convertToDataType(tag, buff);
+  if (value === undefined) return;
+
+  const scaledValue = scaleValue(tag, value);
+
+  debug('tag: %s, value: %f, scaledValue: %f', tag.name, value, scaledValue);
   return {
     DisplayName: tag.name,
-    Value: value,
+    Value: scaledValue,
     HwId: data[addressArr[0]].HwId,
     SourceTimestamp: new Date(`${data[addressArr[0]].SourceTimestamp}Z`)
       .toISOString(),
@@ -62,38 +102,46 @@ Client.fromEnvironment(Protocol, (err, client) => {
     return;
   }
 
-  client.on('error', (err) => {
-    console.error(err.message);
+  client.on('error', (onErr) => {    
+    console.error(onErr.message);
   });
 
-/*
-  client.setOptions({ ca: fs.readFileSync(moduleCACertFile).toString() }, (err) => {
-  if (err) {
-      console.error('Client setOptions error', err);
+  client.open(openErr => {
+    if (openErr) {
+      console.error(err);
       return;
-  }
-*/
-  client.open(err => {
+    }
 
-      debug('Client connected');
-      client.getTwin((errTwin, twin) => {
+    debug('Client connected');
+
+    client.getTwin((errTwin, twin) => {
+      if (errTwin) {
+        console.error(err);
+        return;
+      }
+
+      if (!twin) {
+        console.error(err);
+        return;
+      }
+
       tags = twin.properties.desired.tags || tags;
       debug('tags', tags);
       twin.on('properties.desired', (delta) => {
-          try {
+        try {
           tags = JSON.parse(delta.tags);
           debug('update tags', tags);
-          } catch (error) {
+        } catch (error) {
           debug('update tags failed', tags);
-          debug(error);
-          }
+          console.error(err);
+        }
       });
-      });
+    });
 
-      client.on('inputMessage', (inputName, rawMsg) => {
+    client.on('inputMessage', (inputName, rawMsg) => {
       if (inputName !== 'modbus') {
-          debug('Unknown inputMessage received on input', inputName);
-          return;
+        debug('Unknown inputMessage received on input', inputName);
+        return;
       }
 
       let msg = JSON.parse(rawMsg.getBytes().toString());
@@ -101,21 +149,29 @@ Client.fromEnvironment(Protocol, (err, client) => {
       if (!Array.isArray(msg)) {
         msg = [msg];
       }
+
       msg.forEach((row) => {
-          if (!messages[row.SourceTimestamp]) messages[row.SourceTimestamp] = {};
-          messages[row.SourceTimestamp][row.Address] = row;
+        if (!messages[row.SourceTimestamp]) messages[row.SourceTimestamp] = {};
+        row.Values.forEach(entry => {
+          messages[row.SourceTimestamp][entry.Address] = entry;
+        });
       });
 
       const tagObjs = [].concat(...Object
-          .keys(messages)
-          .map(key => messages[key])
-          .map(val => tags
+        .keys(messages)
+        .map(key => messages[key])
+        .map(val => tags
           .map(tag => processTag(val, tag))
-          .filter(parsedTag => parsedTag !== undefined)));
+          .filter(parsedTag => parsedTag !== false)));
+
+      if (tagObjs.length == 0) {
+        debug("Nothing to send, return");
+        return;
+      }
 
       client
-          .sendOutputEvent('tags', new Message(JSON.stringify(tagObjs)), () => {});
-      });
+        .sendOutputEvent('tags', new Message(JSON.stringify(tagObjs)), () => {});
+    });
   });
 });
 
