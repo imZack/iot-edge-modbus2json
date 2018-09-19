@@ -12,41 +12,50 @@ const byteMerge = function byteMerge(low, high) {
 };
 
 const convertToDataType = function convertToDataType(tag, buff) {
-  switch(tag.typeName) {
+  switch (tag.dataType) {
     case 'uint':
-      if (buff.length == 1) return buff.readUInt16LE(0);
-      else if (buff.length == 2) return buff.readUInt32LE(0);
-      else return;
+      if (buff.length === 2) return buff.readUInt16LE(0);
+      if (buff.length === 4) return buff.readUInt32LE(0);
+      return false;
     case 'int':
-      if (buff.length == 1) return buff.readInt16LE(0);
-      else if (buff.length == 2) return buff.readInt32LE(0);
-      else return;
+      if (buff.length === 2) return buff.readInt16LE(0);
+      if (buff.length === 4) return buff.readInt32LE(0);
+      return false;
     case 'float':
-      if (buff.length == 1) {
-        debug('type: float with buff size 1');
-        return;
+      if (buff.length === 2) {
+        debug('type: float with buff size 2');
+        return false;
       }
-      else if (buff.length == 2) return buff.readInt32LE(0);
-      else return;
+      if (buff.length === 4) return buff.readFloatLE(0);
+      return false;
     default:
-      debug(`Non type matched ${typeName}`);
-      return;
+      debug(`Non type matched ${tag.dataType}`);
+      return false;
   }
-}
-  
-const scaleValue = function scalingValue(tag, value) {
-  if (tag.scaling == 'point-slope') {
+};
+
+const scaleValue = function scaleValue(tag, value) {
+  if (tag.scaling === 'point-slope') {
     // *Result = n2 + (input - n1) x [(m2-n2)/(m1-n1)]
-    return tag.pointParams.min2 + (tag - tag.pointParams.min1) * ((tag.pointParams.max2 - tag.pointParams.min2) / (tag.pointParams.max1 - tag.pointParams.min1));
-  } else if (tag.scaling == 'slope-intercept') {
-    return tag * tag.interceptParams.slope + tag.slopeParams.offset;
-  } else if (tag.scaling == 'none') {
-    return tag;
+    return tag.pointParams.min2 + (
+      (value - tag.pointParams.min1) * (
+        (tag.pointParams.max2 - tag.pointParams.min2)
+        / (tag.pointParams.max1 - tag.pointParams.min1)
+      )
+    );
+  }
+
+  if (tag.scaling === 'slope-intercept') {
+    return (value * tag.interceptParams.slope) + tag.interceptParams.offset;
+  }
+
+  if (tag.scaling === 'none') {
+    return value;
   }
 
   debug(`Non of scaling type matched ${tag.scaling}`);
   return tag;
-}
+};
 
 console.error = (message) => {
   throw new Error(message);
@@ -55,23 +64,23 @@ console.error = (message) => {
 let tags = [];
 const processTag = function processTag(data, tag) {
   const { addressArr } = tag;
+  const arrLength = addressArr.length;
 
-  if (addressArr.length === 0 || addressArr.length > 2) {
-    debug('processTag addressArr lenght === 0 || addressArr.length > 2');
+  if (arrLength === 0 || addressArr.length > 2) {
+    debug('processTag addressArr lenght === 0 || arrLength > 2');
     return false;
   }
 
-  const arrLength = addressArr.length;
   for (let i = 0; i < arrLength; i += 1) {
     if (data[addressArr[i]] === undefined) {
-      debug('data[%d] === undefined', i);
+      debug(`data[${i}] === undefined`);
       return false;
     }
   }
 
   let buff;
   if (arrLength === 1) {
-    buff = Buffer.alloc(4, 0);
+    buff = Buffer.alloc(2, 0);
     buff.writeUInt16LE(+data[addressArr[0]].Value, 0);
   } else {
     buff = byteMerge(
@@ -80,13 +89,14 @@ const processTag = function processTag(data, tag) {
     );
   }
 
-  debug(`buff: ${buff}`);
+  debug('buff', buff);
   const value = convertToDataType(tag, buff);
-  if (value === undefined) return;
+  debug('value', value);
+  if (value === undefined) return false;
 
   const scaledValue = scaleValue(tag, value);
 
-  debug('tag: %s, value: %f, scaledValue: %f', tag.name, value, scaledValue);
+  debug(`tag: ${tag.name}, value: ${value}, scaledValue: ${scaledValue}`);
   return {
     DisplayName: tag.name,
     Value: scaledValue,
@@ -102,11 +112,11 @@ Client.fromEnvironment(Protocol, (err, client) => {
     return;
   }
 
-  client.on('error', (onErr) => {    
+  client.on('error', (onErr) => {
     console.error(onErr.message);
   });
 
-  client.open(openErr => {
+  client.open((openErr) => {
     if (openErr) {
       console.error(err);
       return;
@@ -125,16 +135,17 @@ Client.fromEnvironment(Protocol, (err, client) => {
         return;
       }
 
-      tags = twin.properties.desired.tags || tags;
-      debug('tags', tags);
+      // tags = twin.properties.desired.tags || tags;
+      // debug('tags', tags);
       twin.on('properties.desired', (delta) => {
-        try {
-          tags = JSON.parse(delta.tags);
-          debug('update tags', tags);
-        } catch (error) {
-          debug('update tags failed', tags);
-          console.error(err);
+        tags = [];
+        for (var key in delta.tags) {
+          const tag = delta.tags[key];
+          if (!tag) continue;
+          tag.addressArr = tag.addressArr.split(',');
+          tags.push(tag);
         }
+        debug('tags updated', tags);
       });
     });
 
@@ -145,33 +156,70 @@ Client.fromEnvironment(Protocol, (err, client) => {
       }
 
       let msg = JSON.parse(rawMsg.getBytes().toString());
-      const messages = {};
       if (!Array.isArray(msg)) {
         msg = [msg];
       }
 
-      msg.forEach((row) => {
-        if (!messages[row.SourceTimestamp]) messages[row.SourceTimestamp] = {};
-        row.Values.forEach(entry => {
-          messages[row.SourceTimestamp][entry.Address] = entry;
+      /*
+      [
+        {
+          "PublishTimestamp": "2018-04-17 12:28:53",
+          "Content": [
+            {
+              "HwId": "PowerMeter-0a:01:01:01:01:02",
+              "Data": [
+                {
+                  "CorrelationId": "MessageType1",
+                  "SourceTimestamp": "2018-04-17 12:28:50",
+                  "Values": [
+                    {
+                      "DisplayName": "Op02",
+                      "Address": "40003",
+                      "Value": "21578"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+      */
+
+      let tagList = [];
+      msg.forEach((record) => {
+        if (!record.Content) return;
+        record.Content.forEach((content) => {
+          content.Data.forEach((pollData) => {
+            const tagStore = {};
+            pollData.Values.forEach((tag) => {
+              tagStore[tag.Address] = {
+                HwId: content.HwId,
+                Value: tag.Value,
+                SourceTimestamp: pollData.SourceTimestamp,
+              };
+            });
+
+            debug(`tagStore: ${JSON.stringify(tagStore)}`);
+            tagList = tagList
+              .concat(tags
+                .map(tag => processTag(tagStore, tag))
+                .filter(parsedTag => parsedTag !== false));
+          });
         });
       });
 
-      const tagObjs = [].concat(...Object
-        .keys(messages)
-        .map(key => messages[key])
-        .map(val => tags
-          .map(tag => processTag(val, tag))
-          .filter(parsedTag => parsedTag !== false)));
-
-      if (tagObjs.length == 0) {
-        debug("Nothing to send, return");
+      if (tagList.length === 0) {
+        debug('Nothing to send, return');
         return;
       }
 
       client
-        .sendOutputEvent('tags', new Message(JSON.stringify(tagObjs)), () => {});
+        .sendOutputEvent(
+          'tags',
+          new Message(JSON.stringify(tagList)),
+          () => {},
+        );
     });
   });
 });
-
