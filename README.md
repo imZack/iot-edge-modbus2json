@@ -120,7 +120,48 @@ root@Moxa:/home/moxa/edge-sample# docker logs -f --tail=50 modbus
   ```json
   {
     "properties.desired": {
-      "tags": "[{\"name\":\"AvgVoltage (volt)\",\"addressArr\":[40287,40288]},{\"name\":\"AvgCurrent (amp)\",\"addressArr\":[40289,40290]},{\"name\":\"RealEnergyNet (kWatt)\",\"addressArr\":[40257,40258]},{\"name\":\"RealEnergyImport (kWh)\",\"addressArr\":[40259,40260]},{\"name\":\"RealEnergyExport (kWh)\",\"addressArr\":[40261,40262]}]"
+      "tags": {
+        "tag1": {
+          "name": "AvgVoltage (volt)",
+          "dataType": "float",
+          "addressArr": "40287,40288",
+          "scaling": "none",
+          "pointParams": {},
+          "interceptParams": {}
+        },
+        "tag2": {
+          "name": "AvgCurrent (amp)",
+          "dataType": "float",
+          "addressArr": "40289,40290",
+          "scaling": "none",
+          "pointParams": {},
+          "interceptParams": {}
+        },
+        "tag3": {
+          "name": "RealEnergyNet (kWatt)",
+          "dataType": "float",
+          "addressArr": "40257,40258",
+          "scaling": "none",
+          "pointParams": {},
+          "interceptParams": {}
+        },
+        "tag4": {
+          "name": "RealEnergyImport (kWh)",
+          "dataType": "float",
+          "addressArr": "40259,40260",
+          "scaling": "none",
+          "pointParams": {},
+          "interceptParams": {}
+        },
+        "tag5": {
+          "name": "RealEnergyExport (kWh)",
+          "dataType": "float",
+          "addressArr": "40261,40262",
+          "scaling": "none",
+          "pointParams": {},
+          "interceptParams": {}
+        }
+      }
     }
   }
   ```
